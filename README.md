@@ -104,8 +104,10 @@ from the **Quit** button in the popover (which tears every route down first).
 12. Leave a route playing for 10+ minutes. If the tap goes silent, the watchdog rebuilds
     it within ~10 s (one brief gap on the default device); check
     `log show --last 30m --predicate 'subsystem BEGINSWITH "dev.perappvolume"'`.
-13. Toggle **Launch at login** and confirm it appears under System Settings → General →
-    Login Items. An ad-hoc-signed build may refuse: the toggle then stays off.
+13. Copy the `.app` to `/Applications` first, then toggle **Launch at login** and confirm
+    it appears under System Settings → General → Login Items. `SMAppService` will usually
+    refuse to register a bundle sitting in `build/`, or one signed ad-hoc; the toggle then
+    stays off (by design) with the reason in the log.
 
 If the app is audibly silent everywhere while routed, TCC denied the tap: remove the
 entry under **System Settings → Privacy & Security → Screen & System Audio Recording
@@ -121,6 +123,11 @@ entry under **System Settings → Privacy & Security → Screen & System Audio R
   in `dev.perappvolume.app`. There is still no settings window. A saved route for an app
   that is not running keeps a row in the popover, so a long-forgotten route is visible
   rather than silent.
+- **A route that fails to start stays failed.** Restore-at-launch (and the login-item
+  path especially, since device enumeration and aggregate creation are flakiest right
+  after boot) can hit a transient `AudioHardwareCreateAggregateDevice` failure; the row
+  then shows the error until you re-pick the device. Reconcile deliberately never retries
+  a failed start on its own, so a genuinely broken route cannot become a rebuild loop.
 - **A device that briefly drops still tears the route down** — it now comes back on its
   own instead of being lost, but there is an audible gap on the default output while it
   is away, and the 400 ms debounce does not cover a blip shorter than that.

@@ -161,6 +161,10 @@ final class RouteManager: ObservableObject {
     /// anyway, so a hung Quit button would be the worse trade. Never call
     /// `DispatchQueue.main.sync` from `workQueue`.
     func shutDown() {
+        // Backstop: `commitGain()` covers a dragged slider, but a slider nudged with the
+        // arrow keys never sends an editing-ended event. This writes the same desired
+        // state, so it saves the latest gains rather than wiping anything.
+        persist()
         maintenanceTimer?.invalidate()
         maintenanceTimer = nil
         generation += 1
@@ -407,13 +411,15 @@ final class RouteManager: ObservableObject {
                 // Audio is flowing, so whatever we did — or did not do — worked.
                 health.silentSince = nil
                 health.attempts = 0
-                stalled.remove(id)
+                // Guarded: mutating a @Published set republishes even when nothing
+                // changed, and this runs every 2 s under an open popover.
+                if stalled.contains(id) { stalled.remove(id) }
             } else if health.everPlayed, isPlaying, callbacksAdvanced {
                 let silentSince = health.silentSince ?? now
                 health.silentSince = silentSince
                 let silentFor = now.timeIntervalSince(silentSince)
                 if silentFor >= Self.silentWindow, health.attempts >= Self.maxHealAttempts {
-                    stalled.insert(id)
+                    if !stalled.contains(id) { stalled.insert(id) }
                 } else if silentFor >= Self.silentWindow,
                           now.timeIntervalSince(health.lastRebuild ?? .distantPast)
                               >= Self.rebuildInterval,
