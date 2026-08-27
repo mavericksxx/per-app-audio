@@ -6,8 +6,13 @@ struct PerAppAudioApp: App {
     @StateObject private var manager = RouteManager()
 
     var body: some Scene {
-        MenuBarExtra("Per-App Audio", systemImage: "speaker.wave.2.circle") {
+        MenuBarExtra {
             PopoverView()
+        } label: {
+            // A custom label drops the title the string initializer supplied, and with it
+            // the accessibility name, so put it back by hand.
+            Image(nsImage: MenuBarIcon.image)
+                .accessibilityLabel("Per-App Audio")
         }
         .menuBarExtraStyle(.window)
         // Also forces the @StateObject to exist at launch: MenuBarExtra's content

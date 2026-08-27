@@ -60,4 +60,4 @@ codesign -dvv "$DEST" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier)' ||
 # build/ still exists, and `open -a` could resolve to the wrong one.
 echo
 open "$DEST"
-echo "Launched $DEST - look for the speaker icon in the menu bar."
+echo "Launched $DEST - look for the splitter icon in the menu bar."

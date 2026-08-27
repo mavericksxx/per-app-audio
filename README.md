@@ -4,7 +4,7 @@ Routes a single app's audio to an output device of your choice, at a volume of y
 choice, while everything else on the system keeps playing on the default output.
 macOS has no per-app volume mixer; this builds one on Core Audio process taps.
 
-It ships as a **menu-bar app**: no Dock icon, no window. Click the speaker icon, pick an
+It ships as a **menu-bar app**: no Dock icon, no window. Click the splitter icon, pick an
 output device next to an app, and the route starts immediately.
 
 ## Features
@@ -124,8 +124,9 @@ Launch it as a bundle. `swift run`, or running `Contents/MacOS/PerAppAudio`
 directly, attributes the TCC grant to the terminal and every buffer comes back as
 zeros with no error anywhere.
 
-There is no window and no Dock icon — look for the speaker icon in the menu bar. Quit
-from the **Quit** button in the popover (which tears every route down first).
+There is no window and no Dock icon — look for the splitter icon (one jack in, two
+out) in the menu bar. Quit from the **Quit** button in the popover (which tears every
+route down first).
 
 ### Manual test
 
