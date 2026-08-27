@@ -4,8 +4,27 @@ Routes a single app's audio to an output device of your choice, at a volume of y
 choice, while everything else on the system keeps playing on the default output.
 macOS has no per-app volume mixer; this builds one on Core Audio process taps.
 
-This repo is currently the **core engine plus a throwaway test harness**. The menu-bar
-app it is meant to become does not exist yet.
+It ships as a **menu-bar app**: no Dock icon, no window. Click the speaker icon, pick an
+output device next to an app, and the route starts immediately.
+
+## Features
+
+- **Menu-bar only** (`LSUIElement`), a `MenuBarExtra` popover.
+- **Immediate apply** — picking a device for an app starts the route right away; picking a
+  different one switches it (brief gap while the old pipeline is torn down). There is no
+  Start button.
+- **Now Playing section** — apps actively producing output (via
+  `kAudioProcessPropertyIsRunningOutput`) and every routed app sit at the top of the list;
+  everything else that has an audio process object is below.
+- **Search field** filters by app name or bundle ID.
+- **Per-app volume slider**, 0–200%, default 100%, applied live with a ~20 ms ramp.
+- **Per-app ✕** tears the route down, so the app falls back to the system default output.
+- **Reset All** does that for every route.
+- **Auto-fallback on device disconnect** — a `kAudioHardwarePropertyDevices` /
+  `kAudioHardwarePropertyDefaultOutputDevice` listener (debounced 400 ms) tears down any
+  route whose destination UID has vanished, and macOS moves the app back to the default.
+- **Cleanup when a routed app quits** — the `NSWorkspace` termination notification, plus a
+  running-apps check on every refresh, drops the route.
 
 ## How it works
 
@@ -36,55 +55,59 @@ It shares a single heap `RenderState` struct with the control thread through an
 ./Scripts/build-app.sh
 ```
 
-This runs `swift build -c release`, assembles `build/PerAppVolumePOC.app` (Info.plist,
+This runs `swift build -c release`, assembles `build/PerAppAudio.app` (Info.plist,
 binary, PkgInfo), and codesigns it. The script picks up a Developer ID or Apple
 Development identity automatically if one exists; on this machine none does, so it
 signs **ad hoc**.
 
-## Run the POC
+## Run
 
 ```sh
-open build/PerAppVolumePOC.app
+open build/PerAppAudio.app
 ```
 
-Launch it as a bundle. `swift run`, or running `Contents/MacOS/PerAppVolumePOC`
+Launch it as a bundle. `swift run`, or running `Contents/MacOS/PerAppAudio`
 directly, attributes the TCC grant to the terminal and every buffer comes back as
 zeros with no error anywhere.
 
-The window has: an app dropdown, an output-device dropdown, Start/Stop, a gain slider
-(0–2), and a diagnostics line.
+There is no window and no Dock icon — look for the speaker icon in the menu bar. Quit
+from the **Quit** button in the popover (which tears every route down first).
 
 ### Manual test
 
 1. Start playing audio in an app (Spotify, a browser tab).
-2. Launch the POC, pick that app and a *different* output device than the current
-   default (e.g. system default = soundbar, route to MacBook Pro Speakers).
-3. Press **Start**. macOS prompts for system audio recording the first time — allow it.
-   If the prompt appears you may need to press Stop then Start again.
+2. Click the menu-bar icon. The playing app should be under **Now Playing**.
+3. Pick a *different* output device than the current default in that app's dropdown
+   (e.g. system default = soundbar, route to MacBook Pro Speakers). The route starts
+   immediately. macOS prompts for system audio recording the first time — allow it,
+   then re-pick the device (the first attempt runs before the grant exists).
 4. Expected: that app's audio moves to the chosen device and disappears from the
    default one. Everything else keeps playing on the default device.
-5. Drag the gain slider — only the routed app's volume changes.
-6. Press **Stop** — the app's audio returns to the default output.
+5. Drag that row's slider — only the routed app's volume changes.
+6. Pick a different device in the same dropdown — the audio moves there after a
+   short gap.
+7. Click the row's **✕** — audio returns to the default output.
+8. **Reset All** does the same for every route at once.
+9. Route to a Bluetooth speaker, then power it off — within a second the row's route
+   disappears and the app is back on the default output.
+10. Route an app, then quit that app — the row and its route go away.
 
-### Reading the diagnostics line
-
-`cb=… in=… ch=… frames=… out=… rms=… gain=…`
-
-- `cb` climbing but `rms` pinned at `0.0000` while the app is audibly playing →
-  the tap is delivering silence. Almost always TCC (permission denied, or a stale
-  grant against a previous ad-hoc signature), or the wrong process was picked.
-- `rms` moving but the destination speaker is silent → the output write or the
-  device format is wrong, not the tap.
-- `cb` not climbing at all → the IOProc never started.
-
-If it stops prompting and just returns silence, remove the entry under **System
-Settings → Privacy & Security → Screen & System Audio Recording → System Audio
-Recording Only** and relaunch.
+If the app is audibly silent everywhere while routed, TCC denied the tap: remove the
+entry under **System Settings → Privacy & Security → Screen & System Audio Recording
+→ System Audio Recording Only** and relaunch.
 
 ## Status and known limitations
 
 - **Ad-hoc signing**: every rebuild changes the code signature, so the system audio
   permission grant resets and you get re-prompted. A real signing identity fixes this.
+  Changing the bundle ID (as this phase did, `dev.perappvolume.poc` →
+  `dev.perappvolume.app`) resets it too.
+- **No persistence**: routes live only as long as the app runs. There is no
+  launch-at-login, no settings window, and no saved configuration.
+- **A device that briefly drops reads as a disconnect.** The reconcile tears down any
+  route whose destination UID is not in the device list; a Bluetooth speaker that
+  renegotiates or blips off will lose its route rather than reattach. The 400 ms debounce
+  narrows the window but does not close it. Re-pick the device to restore the route.
 - **The pipeline runs; the audible result is unverified.** Tap creation, format check,
   aggregate creation, IOProc start, the render block and teardown were all exercised
   against live hardware (routing Firefox to the built-in speakers): callbacks fired
@@ -98,14 +121,15 @@ Recording Only** and relaunch.
   streams. The render block picks the highest-energy input buffer. A live, loud line-in
   on the destination device would beat the tapped app and get re-rendered.
 - **Mute only holds while the IOProc reads.** Stopping the route hands the audio back to
-  the default device — by design here, but it means a future menu-bar app must keep the
-  IOProc running the whole time the routed app is alive, not park it.
+  the default device — which is exactly what ✕ / Reset All / a disconnect rely on. It
+  also means the IOProc runs the whole time a route exists; it is never parked.
 - **Browser helpers are separate entries.** Chrome's audio comes from
   `com.google.Chrome.helper`, not `com.google.Chrome`; pick the helper. All tabs in a
   Chromium browser share one audio process, so per-tab routing is not possible.
-- **No device-change handling.** Changing sample rate, unplugging the destination
-  device, or a Bluetooth format renegotiation will silently kill the route. Health
-  listeners and rebuild-on-change are not implemented.
+- **No format-change healing.** A destination device that changes sample rate or
+  renegotiates its format mid-route will silently kill the audio. Only *disappearance* is
+  handled (by teardown); sample-rate/`StreamConfiguration` health listeners and
+  rebuild-on-change are not implemented.
 - **macOS 26.x tap bug**: taps have been reported to start returning all-zero buffers
   after some minutes, needing a full tap + aggregate rebuild. Not handled.
 - macOS 26's `CATapDescription.bundleIDs` / `processRestoreEnabled` (which would let you
@@ -121,10 +145,13 @@ Recording Only** and relaunch.
 Sources/AudioRoutingEngine/     core engine
   CoreAudioProperties.swift     AudioObjectID property-read helpers
   AudioOutputDevice.swift       output device enumeration (id, UID, name)
-  AudioProcess.swift            audio process enumeration (bundle ID, PIDs, object IDs)
+  AudioProcess.swift            audio process enumeration (bundle ID, PIDs, object IDs,
+                                is-playing)
   Route.swift                   tap -> aggregate -> IOProc pipeline, gain, teardown
-Sources/PerAppVolumePOC/        throwaway SwiftUI harness
-Resources/Info.plist            bundle plist incl. NSAudioCaptureUsageDescription
+Sources/PerAppAudio/            menu-bar app
+  RouteManager.swift            active routes, app/device lists, listeners, reconcile
+  MenuBarApp.swift              MenuBarExtra popover, search, rows, sliders
+Resources/Info.plist            bundle plist incl. LSUIElement + NSAudioCaptureUsageDescription
 Scripts/build-app.sh            build + assemble + codesign the .app
 ```
 
