@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>PerAppVolumePOC</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.perappvolume.poc</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>PerAppVolumePOC</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.4</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<!-- The destination device may be a composite device with input streams, which
+	     makes the system ask for microphone access. Without this string that is a
+	     crash, not a denial. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Per-App Volume needs microphone access when the output device you choose also has audio inputs.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Per-App Volume captures audio from the app you choose so it can play it on a different output device at a volume you set.</string>
+</dict>
+</plist>

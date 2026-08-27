@@ -1,0 +1,27 @@
+This project adapts code from the following open-source projects.
+
+--------------------------------------------------------------------------------
+AudioCap — https://github.com/insidegui/AudioCap
+Copyright (c) Guilherme Rambo. BSD 2-Clause License.
+
+Adapted in: Sources/AudioRoutingEngine/CoreAudioProperties.swift
+The AudioObjectID property-reading helpers (generic read / readString /
+readArray over AudioObjectGetPropertyData, and the process-object list and
+PID-translation accessors) follow AudioCap's ProcessTap/CoreAudioUtils.swift.
+
+--------------------------------------------------------------------------------
+AudioRouter — https://github.com/RaidrDev/AudioRouter
+Copyright (c) Raidr. MIT License.
+
+Adapted in: Sources/AudioRoutingEngine/Route.swift
+The shape of the aggregate-device creation dictionary (main sub-device + sub-tap
+list + private flag) and the tap-then-aggregate-then-IOProc start/teardown
+ordering follow AudioRouter's Sources/AudioRouter/ProcessRouter.swift. The
+render block here is an independent implementation: it carries no class
+reference (AudioRouter captures `[weak self]`), selects the tap buffer by
+energy rather than by index, applies a smoothed gain ramp, and handles
+non-interleaved output layouts.
+
+--------------------------------------------------------------------------------
+Full license texts are in references/ after running the clone commands in
+README.md; that directory is not committed.
