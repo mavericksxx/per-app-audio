@@ -181,11 +181,23 @@ struct AppRowView: View {
 
                 Picker("", selection: deviceSelection(entry)) {
                     Text("Default output").tag(String?.none)
+                    // A pending route's device is not in the list — without a matching
+                    // tag the picker would render blank rather than the choice the user
+                    // made and we are still holding.
+                    if let entry,
+                       !manager.devices.contains(where: { $0.uid == entry.deviceUID }) {
+                        Text(entry.deviceName).tag(Optional(entry.deviceUID))
+                    }
                     ForEach(manager.devices) { Text($0.name).tag(Optional($0.uid)) }
                 }
                 .labelsHidden()
                 .frame(width: 150)
                 .disabled(row.process == nil)
+                // Greyed, not hidden: the route is still ours, just not live.
+                .opacity(entry?.isPending == true ? 0.55 : 1)
+                .help(entry?.status == .waitingForDevice
+                      ? "\(entry?.deviceName ?? "Device") disconnected — will reconnect"
+                      : "")
 
                 Button { manager.clear(id: row.id) } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.borderless)
@@ -201,7 +213,10 @@ struct AppRowView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Slider(value: Binding(get: { Double(entry.gain) },
                                           set: { manager.setGain(id: row.id, gain: Float($0)) }),
-                           in: 0...2)
+                           in: 0...2,
+                           onEditingChanged: { editing in
+                               if !editing { manager.commitGain() }
+                           })
                     Text("\(Int((entry.gain * 100).rounded()))%")
                         .font(.caption).monospacedDigit()
                         .frame(width: 40, alignment: .trailing)
@@ -211,6 +226,10 @@ struct AppRowView: View {
                     Text("Starting…").font(.caption).foregroundStyle(.secondary)
                 case .failed(let message):
                     Text(message).font(.caption).foregroundStyle(.red).lineLimit(2)
+                case .waitingForApp:
+                    note("clock", "Waiting for \(row.name)")
+                case .waitingForDevice:
+                    note("cable.connector.slash", "\(entry.deviceName) disconnected")
                 case .running:
                     EmptyView()
                 }
@@ -218,6 +237,17 @@ struct AppRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    /// A pending route's one-line explanation. Deliberately quiet: the route is still
+    /// there, it just cannot run right now, and it will come back on its own.
+    private func note(_ symbol: String, _ text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+            Text(text)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     /// Picking a device starts (or switches) the route immediately; picking
