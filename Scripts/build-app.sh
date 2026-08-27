@@ -42,5 +42,6 @@ codesign --verify --strict --verbose=1 "$APP"
 
 echo
 echo "Built $APP"
-echo "Launch it with:  open \"$APP\""
+echo "To actually run it, install it:  ./Scripts/install.sh"
+echo "(Launching this build/ copy directly leaves two bundles sharing one bundle ID.)"
 echo "(Do NOT run Contents/MacOS/PerAppAudio directly - the tap will return silence.)"

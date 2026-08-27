@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds the .app and installs it into /Applications, replacing any previous copy.
 # Installing matters for two reasons beyond tidiness: SMAppService (Launch at login)
-# refuses to register a bundle sitting in build/, and a bundle that keeps the same
-# path and the same signing identity keeps its System Audio Recording grant.
+# refuses to register a bundle sitting in build/, and a bundle re-signed with the same
+# identity keeps its System Audio Recording grant across updates.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

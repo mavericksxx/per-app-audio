@@ -166,8 +166,9 @@ entry under **System Settings → Privacy & Security → Screen & System Audio R
 
 - **Signing**: builds on this machine now use a free **Apple Development** identity, so
   the designated requirement is identity-based and the system audio permission grant is
-  expected to survive rebuilds (verified: the requirement no longer pins a per-build
-  hash; surviving a grant across many updates has not been observed over time yet).
+  expected to survive rebuilds (verified: the designated requirement is byte-identical
+  across rebuilds and pins no per-build hash; a grant actually outliving many updates
+  has not been watched over time yet).
   Without an identity the build falls back to ad-hoc, and the grant resets on every
   rebuild. Changing the bundle ID (as an earlier phase did, `dev.perappvolume.poc` →
   `dev.perappvolume.app`) resets it either way. An Apple Development cert expires after
