@@ -55,21 +55,69 @@ It shares a single heap `RenderState` struct with the control thread through an
 - macOS 14.4+ (developed and built on macOS 26.x with the Xcode 26 toolchain)
 - Xcode command line tools
 
-## Build
+## Install
+
+This is the normal way to use the app.
+
+```sh
+./Scripts/install.sh
+```
+
+It builds, quits a running copy gracefully (which tears its routes down and saves
+gains), replaces `/Applications/PerAppAudio.app`, and launches it from there. Run it
+again after any code change — that is the whole update procedure.
+
+### Get a signing identity first (once)
+
+Without a stable signing identity the app is signed **ad hoc**, and every rebuild
+produces a different code signature, so macOS treats each build as a new app and
+re-prompts for **System Audio Recording**. A free Apple ID fixes this — no paid
+developer program needed:
+
+1. Xcode → Settings → Accounts, add your Apple ID with **+**.
+2. Select the account, click **Manage Certificates…**.
+3. Click **+** → **Apple Development**, then close.
+
+`build-app.sh` picks the identity up on its own, preferring a *Developer ID
+Application* cert over *Apple Development* if both exist. Nothing to configure.
+
+With a real identity the bundle's designated requirement is its *identity* rather than
+a per-build hash:
+
+```
+designated => identifier "dev.perappvolume.app" and anchor apple generic
+              and certificate leaf[subject.CN] = "Apple Development: you (TEAMID)" ...
+```
+
+Every rebuild satisfies that same requirement, so the audio permission grant survives
+updates instead of resetting. Ad-hoc builds have no such anchor and cannot.
+
+> Switching from ad-hoc to a real cert changes the signature once. Delete the stale
+> entry under **System Settings → Privacy & Security → Screen & System Audio Recording
+> → System Audio Recording Only** before relaunching, or you will chase a denial that
+> is really just a leftover row.
+
+**Launch at login** needs the `/Applications` copy: `SMAppService` refuses to register
+a bundle sitting in `build/`, and generally refuses an ad-hoc-signed one too. Installed
+from `/Applications` with a real identity, both conditions are satisfied.
+
+If `/Applications` is not writable the script falls back to `~/Applications` and says
+so. Launch at login may still refuse a bundle outside `/Applications`.
+
+## Build only
 
 ```sh
 ./Scripts/build-app.sh
 ```
 
 This runs `swift build -c release`, assembles `build/PerAppAudio.app` (Info.plist,
-binary, PkgInfo), and codesigns it. The script picks up a Developer ID or Apple
-Development identity automatically if one exists; on this machine none does, so it
-signs **ad hoc**.
+binary, PkgInfo), and codesigns it — without installing. Useful for a quick compile
+check; prefer `install.sh` for anything you actually intend to run.
 
 ## Run
 
 ```sh
-open build/PerAppAudio.app
+open /Applications/PerAppAudio.app
 ```
 
 Launch it as a bundle. `swift run`, or running `Contents/MacOS/PerAppAudio`
@@ -104,10 +152,11 @@ from the **Quit** button in the popover (which tears every route down first).
 12. Leave a route playing for 10+ minutes. If the tap goes silent, the watchdog rebuilds
     it within ~10 s (one brief gap on the default device); check
     `log show --last 30m --predicate 'subsystem BEGINSWITH "dev.perappvolume"'`.
-13. Copy the `.app` to `/Applications` first, then toggle **Launch at login** and confirm
-    it appears under System Settings → General → Login Items. `SMAppService` will usually
-    refuse to register a bundle sitting in `build/`, or one signed ad-hoc; the toggle then
-    stays off (by design) with the reason in the log.
+13. Run `./Scripts/install.sh` so the app runs from `/Applications`, then toggle
+    **Launch at login** and confirm it appears under System Settings → General → Login
+    Items. `SMAppService` refuses to register a bundle sitting in `build/`, and generally
+    refuses an ad-hoc-signed one; in either case the toggle stays off (by design) with
+    the reason in the log.
 
 If the app is audibly silent everywhere while routed, TCC denied the tap: remove the
 entry under **System Settings → Privacy & Security → Screen & System Audio Recording
@@ -115,10 +164,16 @@ entry under **System Settings → Privacy & Security → Screen & System Audio R
 
 ## Status and known limitations
 
-- **Ad-hoc signing**: every rebuild changes the code signature, so the system audio
-  permission grant resets and you get re-prompted. A real signing identity fixes this.
-  Changing the bundle ID (as this phase did, `dev.perappvolume.poc` →
-  `dev.perappvolume.app`) resets it too.
+- **Signing**: builds on this machine now use a free **Apple Development** identity, so
+  the designated requirement is identity-based and the system audio permission grant is
+  expected to survive rebuilds (verified: the requirement no longer pins a per-build
+  hash; surviving a grant across many updates has not been observed over time yet).
+  Without an identity the build falls back to ad-hoc, and the grant resets on every
+  rebuild. Changing the bundle ID (as an earlier phase did, `dev.perappvolume.poc` →
+  `dev.perappvolume.app`) resets it either way. An Apple Development cert expires after
+  a year; renewing it in Xcode keeps the same common name, so the requirement holds.
+- **Not notarized.** Fine on the machine that built it. Another Mac would get a
+  Gatekeeper block, since an Apple Development cert is not a distribution cert.
 - **Persistence is UserDefaults, and it is desired state.** One JSON blob under `routes`
   in `dev.perappvolume.app`. There is still no settings window. A saved route for an app
   that is not running keeps a row in the popover, so a long-forgotten route is visible
@@ -182,6 +237,7 @@ Sources/PerAppAudio/            menu-bar app
   MenuBarApp.swift              MenuBarExtra popover, search, rows, sliders
 Resources/Info.plist            bundle plist incl. LSUIElement + NSAudioCaptureUsageDescription
 Scripts/build-app.sh            build + assemble + codesign the .app
+Scripts/install.sh              build, then replace and launch /Applications/PerAppAudio.app
 ```
 
 ## References
