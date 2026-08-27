@@ -135,12 +135,16 @@ final class RouteManager: ObservableObject {
         entries[id]?.route?.gain = gain
     }
 
-    /// Stops every route and blocks until the work queue has drained, so quitting cannot
-    /// leave a tap or an aggregate behind. Never call `DispatchQueue.main.sync` from
-    /// `workQueue` or this barrier deadlocks.
+    /// Stops every route and waits — briefly — for the work queue to drain, so quitting
+    /// does not leave a tap or an aggregate behind. The wait is bounded because the stops
+    /// queue behind any start already in flight, and `Route.start()` sleeps; process exit
+    /// releases the taps and private aggregates anyway, so a hung Quit button would be
+    /// the worse trade. Never call `DispatchQueue.main.sync` from `workQueue`.
     func shutDown() {
         resetAll()
-        workQueue.sync {}
+        let drained = DispatchSemaphore(value: 0)
+        workQueue.async { drained.signal() }
+        _ = drained.wait(timeout: .now() + 1)
     }
 
     private func attach(_ route: Route, id: String, generation: Int) {
@@ -173,7 +177,11 @@ final class RouteManager: ObservableObject {
     /// Teardown-only-on-vanish: a device appearing (including an aggregate we just made)
     /// changes nothing, so the listener can fire as often as it likes.
     private func refreshDevices() {
-        devices = (try? AudioOutputDevice.all()) ?? []
+        // Enumeration throws while the HAL churns — which is exactly when the hot-plug
+        // listener fires. Treating that as "no devices exist" would clear every route,
+        // so a failed read reconciles nothing; only a successful one does.
+        guard let enumerated = try? AudioOutputDevice.all() else { return }
+        devices = enumerated
         let available = Set(devices.map(\.uid))
         for id in Array(entries.keys) where !available.contains(entries[id]!.deviceUID) {
             clear(id: id)
@@ -181,7 +189,7 @@ final class RouteManager: ObservableObject {
     }
 
     private func refreshRows() {
-        let processes = (try? AudioProcess.all()) ?? []
+        guard let processes = try? AudioProcess.all() else { return }
         let running = Dictionary(
             NSWorkspace.shared.runningApplications.compactMap { app in
                 app.bundleIdentifier.map { ($0, app) }
