@@ -13,7 +13,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
-            name: "PerAppVolumePOC",
+            name: "PerAppAudio",
             dependencies: ["AudioRoutingEngine"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
