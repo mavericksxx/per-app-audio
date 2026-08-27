@@ -5,13 +5,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>PerAppVolumePOC</string>
+	<string>PerAppAudio</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.perappvolume.poc</string>
+	<string>dev.perappvolume.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>PerAppVolumePOC</string>
+	<string>PerAppAudio</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -26,6 +26,9 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Menu-bar only: no Dock icon, no main window. -->
+	<key>LSUIElement</key>
+	<true/>
 	<!-- The destination device may be a composite device with input streams, which
 	     makes the system ask for microphone access. Without this string that is a
 	     crash, not a denial. -->
