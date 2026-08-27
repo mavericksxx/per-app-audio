@@ -12,6 +12,10 @@ public struct AudioProcess: Identifiable, Hashable, Sendable {
     public let name: String
     public let pids: [pid_t]
     public let objectIDs: [AudioObjectID]
+    /// True while at least one of the app's process objects is actively playing audio.
+    /// Stays true for a routed app: the tap mutes the normal output but the app is
+    /// still running output into it.
+    public let isPlaying: Bool
 
     /// Every running application that has at least one audio process object.
     public static func all() throws -> [AudioProcess] {
@@ -22,7 +26,8 @@ public struct AudioProcess: Identifiable, Hashable, Sendable {
             },
             uniquingKeysWith: { first, _ in first })
 
-        var byBundleID: [String: (name: String, pids: [pid_t], objects: [AudioObjectID])] = [:]
+        var byBundleID:
+            [String: (name: String, pids: [pid_t], objects: [AudioObjectID], playing: Bool)] = [:]
         for object in try AudioObjectID.system.readObjectList(
             kAudioHardwarePropertyProcessObjectList) {
             guard let bundleID = try? object.readString(kAudioProcessPropertyBundleID),
@@ -31,13 +36,16 @@ public struct AudioProcess: Identifiable, Hashable, Sendable {
                   let pid = try? object.read(kAudioProcessPropertyPID, default: pid_t(-1)),
                   pid > 0
             else { continue }
-            byBundleID[bundleID, default: (name, [], [])].pids.append(pid)
+            let playing = (try? object.read(kAudioProcessPropertyIsRunningOutput,
+                                            default: UInt32(0))) == 1
+            byBundleID[bundleID, default: (name, [], [], false)].pids.append(pid)
             byBundleID[bundleID]!.objects.append(object)
+            byBundleID[bundleID]!.playing = byBundleID[bundleID]!.playing || playing
         }
 
         return byBundleID
-            .map { AudioProcess(id: $0.key, name: $0.value.name,
-                                pids: $0.value.pids, objectIDs: $0.value.objects) }
+            .map { AudioProcess(id: $0.key, name: $0.value.name, pids: $0.value.pids,
+                                objectIDs: $0.value.objects, isPlaying: $0.value.playing) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 }

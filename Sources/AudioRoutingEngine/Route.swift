@@ -37,6 +37,12 @@ private struct RenderState {
 /// only holds while the IOProc is reading, so stopping the route hands the audio back
 /// to the default device.
 public final class Route {
+    /// UID prefix for the private aggregates we create. `kAudioAggregateDeviceIsPrivateKey`
+    /// hides them from other processes but not from us, so they would otherwise turn up in
+    /// `AudioOutputDevice.all()` as pickable destinations. Matching on the UID rather than
+    /// the name avoids colliding with a device the user happens to have named the same.
+    static let aggregateUIDPrefix = "PerAppVolume-"
+
     public let process: AudioProcess
     public let device: AudioOutputDevice
 
@@ -149,7 +155,7 @@ public final class Route {
         //    list afterwards via AudioObjectSetPropertyData silently does nothing.
         let description: [String: Any] = [
             kAudioAggregateDeviceNameKey: "PerAppVolume-\(process.id)",
-            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceUIDKey: Route.aggregateUIDPrefix + UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: device.uid,
             kAudioAggregateDeviceIsPrivateKey: 1,
             kAudioAggregateDeviceIsStackedKey: 0,

@@ -13,6 +13,7 @@ public struct AudioOutputDevice: Identifiable, Hashable, Sendable {
             .compactMap { deviceID -> AudioOutputDevice? in
                 guard deviceID.channelCount(scope: kAudioObjectPropertyScopeOutput) > 0,
                       let uid = try? deviceID.readString(kAudioDevicePropertyDeviceUID),
+                      !uid.hasPrefix(Route.aggregateUIDPrefix),  // our own routing aggregates
                       let name = try? deviceID.readString(kAudioObjectPropertyName)
                 else { return nil }
                 return AudioOutputDevice(id: deviceID, uid: uid, name: name)
