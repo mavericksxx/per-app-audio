@@ -20,11 +20,17 @@ output device next to an app, and the route starts immediately.
 - **Per-app volume slider**, 0–200%, default 100%, applied live with a ~20 ms ramp.
 - **Per-app ✕** tears the route down, so the app falls back to the system default output.
 - **Reset All** does that for every route.
-- **Auto-fallback on device disconnect** — a `kAudioHardwarePropertyDevices` /
+- **Routes persist** — every route you set is saved (bundle ID → device UID, gain) and
+  restored at the next launch. Only ✕ or Reset All forgets one; quitting does not.
+- **Reattach on disconnect** — a `kAudioHardwarePropertyDevices` /
   `kAudioHardwarePropertyDefaultOutputDevice` listener (debounced 400 ms) tears down any
-  route whose destination UID has vanished, and macOS moves the app back to the default.
-- **Cleanup when a routed app quits** — the `NSWorkspace` termination notification, plus a
-  running-apps check on every refresh, drops the route.
+  route whose destination UID has vanished, so macOS moves the app back to the default —
+  but the route stays *pending* (greyed in the row) and comes back on its own when the
+  device reappears. Same for an app that quits and relaunches.
+- **Zero-buffer watchdog** — a route whose tap stops delivering audio while the app is
+  still playing is rebuilt automatically, capped at one rebuild per 30 s and three
+  strikes. See the macOS 26 tap bug below.
+- **Launch at login** — an `SMAppService.mainApp` toggle in the footer.
 
 ## How it works
 
@@ -88,9 +94,18 @@ from the **Quit** button in the popover (which tears every route down first).
    short gap.
 7. Click the row's **✕** — audio returns to the default output.
 8. **Reset All** does the same for every route at once.
-9. Route to a Bluetooth speaker, then power it off — within a second the row's route
-   disappears and the app is back on the default output.
-10. Route an app, then quit that app — the row and its route go away.
+9. Route to a Bluetooth speaker, then power it off — within a second the app is back on
+   the default output and the row shows the speaker greyed, "… disconnected". Power the
+   speaker back on: the route re-establishes itself within a few seconds.
+10. Route an app, then quit that app — the row shows "Waiting for …". Relaunch it and
+    start playing: the route comes back.
+11. Quit PerAppAudio from the footer and relaunch it: the routes you set are restored,
+    at the gains you set.
+12. Leave a route playing for 10+ minutes. If the tap goes silent, the watchdog rebuilds
+    it within ~10 s (one brief gap on the default device); check
+    `log show --last 30m --predicate 'subsystem BEGINSWITH "dev.perappvolume"'`.
+13. Toggle **Launch at login** and confirm it appears under System Settings → General →
+    Login Items. An ad-hoc-signed build may refuse: the toggle then stays off.
 
 If the app is audibly silent everywhere while routed, TCC denied the tap: remove the
 entry under **System Settings → Privacy & Security → Screen & System Audio Recording
@@ -102,12 +117,13 @@ entry under **System Settings → Privacy & Security → Screen & System Audio R
   permission grant resets and you get re-prompted. A real signing identity fixes this.
   Changing the bundle ID (as this phase did, `dev.perappvolume.poc` →
   `dev.perappvolume.app`) resets it too.
-- **No persistence**: routes live only as long as the app runs. There is no
-  launch-at-login, no settings window, and no saved configuration.
-- **A device that briefly drops reads as a disconnect.** The reconcile tears down any
-  route whose destination UID is not in the device list; a Bluetooth speaker that
-  renegotiates or blips off will lose its route rather than reattach. The 400 ms debounce
-  narrows the window but does not close it. Re-pick the device to restore the route.
+- **Persistence is UserDefaults, and it is desired state.** One JSON blob under `routes`
+  in `dev.perappvolume.app`. There is still no settings window. A saved route for an app
+  that is not running keeps a row in the popover, so a long-forgotten route is visible
+  rather than silent.
+- **A device that briefly drops still tears the route down** — it now comes back on its
+  own instead of being lost, but there is an audible gap on the default output while it
+  is away, and the 400 ms debounce does not cover a blip shorter than that.
 - **The pipeline runs; the audible result is unverified.** Tap creation, format check,
   aggregate creation, IOProc start, the render block and teardown were all exercised
   against live hardware (routing Firefox to the built-in speakers): callbacks fired
@@ -130,8 +146,14 @@ entry under **System Settings → Privacy & Security → Screen & System Audio R
   renegotiates its format mid-route will silently kill the audio. Only *disappearance* is
   handled (by teardown); sample-rate/`StreamConfiguration` health listeners and
   rebuild-on-change are not implemented.
-- **macOS 26.x tap bug**: taps have been reported to start returning all-zero buffers
-  after some minutes, needing a full tap + aggregate rebuild. Not handled.
+- **macOS 26.x tap bug**: taps can start returning all-zero buffers after some minutes,
+  needing a full tap + aggregate rebuild. The watchdog handles this, but only by the
+  symptom (`kAudioProcessPropertyIsRunningOutput` true, callbacks still arriving, no
+  callback carrying energy for 8 s) — it cannot tell that bug apart from a missing
+  permission grant or a genuinely silent app, which is why it only ever arms on a tap
+  that has already delivered audio, why it rebuilds at most three times, and why the row
+  note after that says nothing about the cause. **Unverified**: no zero-buffer episode
+  has been observed and healed on real hardware yet.
 - macOS 26's `CATapDescription.bundleIDs` / `processRestoreEnabled` (which would let you
   pre-configure a route for an app that isn't running) are deliberately unused.
 - `kAudioAggregateDeviceTapAutoStartKey` is deliberately **not** set, unlike the
