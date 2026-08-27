@@ -16,9 +16,18 @@ struct PerAppAudioApp: App {
     }
 }
 
+/// Natural height of the row list, so the scroll view can be given a definite one.
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct PopoverView: View {
     @EnvironmentObject private var manager: RouteManager
     @State private var search = ""
+    @State private var listHeight: CGFloat = 0
 
     /// Apps playing right now, plus everything routed, kept at the top.
     private var isPromoted: (RouteManager.AppRow) -> Bool {
@@ -44,13 +53,19 @@ struct PopoverView: View {
 
             if rows.isEmpty {
                 Text(manager.rows.isEmpty
-                     ? "No apps are producing audio yet."
+                     ? "No apps playing audio."
                      : "No apps match “\(search)”.")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12).padding(.vertical, 18)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 12).padding(.vertical, 28)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    // Eager VStack, not Lazy: a lazy container inside a scroll view that
+                    // has not been given a height materializes nothing, which rendered an
+                    // empty popover. The list is tens of rows at most, so laziness buys
+                    // nothing anyway.
+                    VStack(alignment: .leading, spacing: 0) {
                         if !promoted.isEmpty {
                             SectionLabel("Now Playing")
                             ForEach(promoted) { AppRowView(row: $0) }
@@ -60,8 +75,18 @@ struct PopoverView: View {
                             ForEach(others) { AppRowView(row: $0) }
                         }
                     }
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: ContentHeightKey.self,
+                                               value: geometry.size.height)
+                    })
                 }
-                .frame(maxHeight: 380)
+                // A ScrollView has no intrinsic height, and the popover window sizes
+                // itself to its content, so without a definite height here the whole list
+                // collapses to nothing. Measure the rows and clamp.
+                .frame(height: min(max(listHeight, 44), 380))
+                .onPreferenceChange(ContentHeightKey.self) { height in
+                    listHeight = height
+                }
             }
 
             Divider()
@@ -80,18 +105,33 @@ struct PopoverView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search apps", text: $search)
-                .textFieldStyle(.plain)
-            if !search.isEmpty {
-                Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Per-App Audio").font(.headline)
+                Spacer()
+                if !manager.entries.isEmpty {
+                    Text("\(manager.entries.count) routed")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.callout).foregroundStyle(.secondary)
+                TextField("Search apps", text: $search)
+                    .textFieldStyle(.plain)
+                if !search.isEmpty {
+                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
     }
 
     private var footer: some View {
@@ -105,7 +145,7 @@ struct PopoverView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
     }
 }
 
