@@ -231,7 +231,12 @@ struct AppRowView: View {
                 case .waitingForDevice:
                     note("cable.connector.slash", "\(entry.deviceName) disconnected")
                 case .running:
-                    EmptyView()
+                    // Deliberately does not name a cause: a silent tap that repeated
+                    // rebuilds did not fix could be the macOS 26 bug, a missing
+                    // system-audio grant, or an app that is genuinely quiet.
+                    if manager.stalled.contains(row.id) {
+                        note("exclamationmark.triangle", "No audio from this app’s tap")
+                    }
                 }
             }
         }

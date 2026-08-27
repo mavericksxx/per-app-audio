@@ -24,6 +24,7 @@ private struct RenderState {
     var sampleRate: Float = 48000    // set once before the IOProc starts
     var level: Float = 0             // post-gain RMS of the chosen input buffer
     var callbackCount: Int32 = 0
+    var nonzeroCallbackCount: Int32 = 0  // callbacks whose input carried any energy
     var inputBufferCount: Int32 = 0
     var chosenChannels: Int32 = 0
     var chosenFrames: Int32 = 0
@@ -77,6 +78,15 @@ public final class Route {
 
     /// Post-gain RMS of the audio last written, for the POC's level readout.
     public var level: Float { state?.pointee.level ?? 0 }
+
+    /// Render-block callback counts since this pipeline started: every callback, and
+    /// those whose tap input carried any energy. Both monotonic while the route runs.
+    /// `callbacks` still climbing while `nonzero` sits still means the tap has gone
+    /// silent even though Core Audio is still driving us.
+    public var tapActivity: (callbacks: Int, nonzero: Int) {
+        guard let state else { return (0, 0) }
+        return (Int(state.pointee.callbackCount), Int(state.pointee.nonzeroCallbackCount))
+    }
 
     /// One-line summary of what the render block is actually seeing. A level that
     /// stays at 0 while the app plays means the tap is delivering silence (TCC denied,
@@ -271,6 +281,10 @@ public final class Route {
             state.pointee.level = 0
             return
         }
+
+        // Two free counters for the watchdog: callbacks still arriving but none of them
+        // carrying energy is the signature of the macOS 26 tap going all-zero.
+        if bestMeanSquare > 0 { state.pointee.nonzeroCallbackCount &+= 1 }
 
         let inChannels = Int(inBuffer.mNumberChannels)
         let inFrames = Int(inBuffer.mDataByteSize) / (MemoryLayout<Float>.size * inChannels)

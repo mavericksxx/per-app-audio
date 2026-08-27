@@ -62,6 +62,8 @@ final class RouteManager: ObservableObject {
     @Published private(set) var devices: [AudioOutputDevice] = []
     @Published private(set) var entries: [String: Entry] = [:]
     @Published private(set) var icons: [String: NSImage] = [:]
+    /// Routes the zero-buffer watchdog has given up on, for a subtle note in the row.
+    @Published private(set) var stalled: Set<String> = []
 
     private var generation = 0
     private var reconcileWork: DispatchWorkItem?
@@ -177,6 +179,8 @@ final class RouteManager: ObservableObject {
         entries[id] = Entry(deviceUID: device.uid, deviceName: device.name,
                             appName: process.name, gain: gain, status: .starting,
                             generation: generation, route: nil)
+        health[id] = nil
+        stalled.remove(id)
 
         workQueue.async { [live, weak self] in
             // Unconditional: at most one live route per bundle ID, whatever raced.
@@ -213,11 +217,15 @@ final class RouteManager: ObservableObject {
     /// queue. The ordering is what makes the periodic `tapActivity` read safe.
     private func stopLiveRoute(id: String) {
         entries[id]?.route = nil
+        health[id] = nil
+        stalled.remove(id)
         workQueue.async { [live] in live.byBundleID.removeValue(forKey: id)?.stop() }
     }
 
     private func stopAllLiveRoutes() {
         for id in entries.keys { entries[id]?.route = nil }
+        health.removeAll()
+        stalled.removeAll()
         workQueue.async { [live] in
             for route in live.byBundleID.values { route.stop() }
             live.byBundleID.removeAll()
@@ -351,6 +359,86 @@ final class RouteManager: ObservableObject {
 
     private func maintain() {
         refresh()
+        healSilentRoutes()
+    }
+
+    // MARK: - Zero-buffer watchdog
+
+    /// On macOS 26 a process tap can start delivering all-zero buffers mid-session while
+    /// the app is audibly playing, and only a full teardown and rebuild recovers it. Per
+    /// route we watch the render block's non-silent-callback counter and rebuild when it
+    /// stops moving while the app is still producing output.
+    private struct Health {
+        var callbacks = 0
+        var nonzero = 0
+        /// This tap has produced audio at least once, carried across rebuilds. Until it
+        /// has, silence is a missing system-audio grant or an app that simply has not
+        /// played yet — neither of which a rebuild fixes, and both of which would
+        /// otherwise burn the strike budget on every route at launch.
+        var everPlayed = false
+        var silentSince: Date?
+        var lastRebuild: Date?
+        var attempts = 0
+    }
+
+    private var health: [String: Health] = [:]
+    /// Sustained silence before a rebuild. Long enough that a gap between tracks, or a
+    /// genuinely quiet passage, does not trip it.
+    private static let silentWindow: TimeInterval = 8
+    /// Floor on the gap between rebuilds of the same route: a rebuild drops the app onto
+    /// the default device for a moment, so a rebuild loop would be worse than the bug.
+    private static let rebuildInterval: TimeInterval = 30
+    private static let maxHealAttempts = 3
+
+    private func healSilentRoutes() {
+        let now = Date()
+        for (id, entry) in entries {
+            guard entry.status == .running, let route = entry.route else { continue }
+            let activity = route.tapActivity
+            var health = self.health[id] ?? Health()
+            let callbacksAdvanced = activity.callbacks > health.callbacks
+            let nonzeroAdvanced = activity.nonzero > health.nonzero
+            health.callbacks = activity.callbacks
+            health.nonzero = activity.nonzero
+            health.everPlayed = health.everPlayed || activity.nonzero > 0
+            let isPlaying = rows.first { $0.id == id }?.isPlaying == true
+
+            if nonzeroAdvanced {
+                // Audio is flowing, so whatever we did — or did not do — worked.
+                health.silentSince = nil
+                health.attempts = 0
+                stalled.remove(id)
+            } else if health.everPlayed, isPlaying, callbacksAdvanced {
+                let silentSince = health.silentSince ?? now
+                health.silentSince = silentSince
+                let silentFor = now.timeIntervalSince(silentSince)
+                if silentFor >= Self.silentWindow, health.attempts >= Self.maxHealAttempts {
+                    stalled.insert(id)
+                } else if silentFor >= Self.silentWindow,
+                          now.timeIntervalSince(health.lastRebuild ?? .distantPast)
+                              >= Self.rebuildInterval,
+                          // Freshly enumerated: an app that spawned new helper processes
+                          // since the route started must be tapped over its current
+                          // object IDs, or the rebuild reproduces the silence.
+                          let process = rows.first(where: { $0.id == id })?.process,
+                          let device = devices.first(where: { $0.uid == entry.deviceUID }) {
+                    log.notice("""
+                        tap for \(id, privacy: .public) silent for \(Int(silentFor), privacy: .public)s \
+                        while the app is playing; rebuilding \
+                        (attempt \(health.attempts + 1, privacy: .public))
+                        """)
+                    startRoute(id: id, process: process, device: device)
+                    // startRoute clears health[id]; carry the strike count and the armed
+                    // flag over so the cap actually caps.
+                    self.health[id] = Health(everPlayed: true, lastRebuild: now,
+                                             attempts: health.attempts + 1)
+                    continue
+                }
+            } else {
+                health.silentSince = nil
+            }
+            self.health[id] = health
+        }
     }
 
 }
