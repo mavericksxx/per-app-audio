@@ -26,6 +26,7 @@ private struct ContentHeightKey: PreferenceKey {
 
 struct PopoverView: View {
     @EnvironmentObject private var manager: RouteManager
+    @StateObject private var launchAtLogin = LaunchAtLogin()
     @State private var search = ""
     @State private var listHeight: CGFloat = 0
 
@@ -135,17 +136,25 @@ struct PopoverView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Button("Reset All") { manager.resetAll() }
-                .disabled(manager.entries.isEmpty)
-            Spacer()
-            Button("Quit") {
-                manager.shutDown()
-                NSApp.terminate(nil)
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Launch at login", isOn: Binding(get: { launchAtLogin.isEnabled },
+                                                    set: { _ in launchAtLogin.toggle() }))
+                .toggleStyle(.checkbox)
+                .font(.callout)
+            HStack {
+                Button("Reset All") { manager.resetAll() }
+                    .disabled(manager.entries.isEmpty)
+                Spacer()
+                Button("Quit") {
+                    manager.shutDown()
+                    NSApp.terminate(nil)
+                }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        // The registration can be changed from System Settings behind our back.
+        .onAppear { launchAtLogin.refresh() }
     }
 }
 

@@ -24,6 +24,12 @@ reference (AudioRouter captures `[weak self]`), selects the tap buffer by
 energy rather than by index, applies a smoothed gain ramp, and handles
 non-interleaved output layouts.
 
+Also in: Sources/PerAppAudio/LaunchAtLogin.swift
+The launch-at-login toggle is the three-call SMAppService.mainApp API
+(status / register / unregister) written from Apple's documentation; AudioRouter's
+Sources/AudioRouter/LaunchAtLoginController.swift wraps it the same way, which is
+noted here because that file is vendored under references/.
+
 ================================================================================
 AudioCap — BSD 2-Clause License
 Copyright (c) 2024 Guilherme Rambo
